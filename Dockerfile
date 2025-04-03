@@ -18,5 +18,5 @@ VOLUME /tmp
 
 # Copy the JAR from the build stage
 COPY --from=build /app/target/*.jar cc-backend-ai.jar
-ENTRYPOINT ["java","-jar","cc-backend-ai.jar"]
+ENTRYPOINT ["java", "-jar", "cc-backend-ai.jar", "--spring.datasource.url=${MYSQL_DB_URL}", "--spring.datasource.username=${MYSQL_DB_USER}", "--spring.datasource.password=${MYSQL_DB_PASS}"]
 EXPOSE 2991
