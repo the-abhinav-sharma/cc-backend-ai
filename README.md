@@ -1,1 +1,1 @@
-Repo for connecting with OpenAI's Gernerative AI framework
+Repo for connecting with OpenAI's Generative AI framework
