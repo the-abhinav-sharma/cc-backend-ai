@@ -17,12 +17,14 @@ import org.springframework.ai.openai.OpenAiImageModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.abhinav.cc_backend_ai.model.Answer;
 import com.abhinav.cc_backend_ai.model.Question;
+import com.abhinav.cc_backend_ai.service.MailService;
 import com.abhinav.cc_backend_ai.service.OpenAIService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,9 @@ public class FrontController {
 	
 	@Autowired
 	private OpenAIService openAIService;
+	
+	@Autowired
+	MailService mailService;
 	
 	@Autowired
 	OpenAiImageModel openAiImageModel;
@@ -66,6 +71,21 @@ public class FrontController {
             log.info("Image successfully written to file: " + outputFile.getAbsolutePath());
 
             return baos.toByteArray();
+	}
+	
+	@GetMapping(path = "/mail", produces = "application/json")
+	public String getJSON() throws IOException {
+		String response = null;
+		File file = mailService.getImageFromGmail();
+		if(file!=null) {
+			response = openAIService.extractDataFromImage(file);
+			response = response.replace("```", "");
+			response = response.replace("json", "");
+			log.info("Response received from OpenAI!");
+		}else {
+			log.info("Data not received from mail, hence not sending to OpenAI!");
+		}
+		return response;
 	}
 
 	
