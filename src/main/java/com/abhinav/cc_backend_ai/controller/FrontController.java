@@ -111,6 +111,12 @@ public class FrontController {
 		return restTemplate.postForEntity(ccBackendURL, entity, String.class).getBody();
 		
 	}
+	
+	@GetMapping(path = "/health")
+	public String health() throws IOException {
+		return "CC Backend AI is up and running!";
+		
+	}
 
 	
 //	@GetMapping("/getPrompts")
