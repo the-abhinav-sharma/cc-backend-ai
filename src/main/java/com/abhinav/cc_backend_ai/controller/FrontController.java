@@ -87,19 +87,20 @@ public class FrontController {
             return baos.toByteArray();
 	}
 	
-	@GetMapping(path = "/mail", produces = "application/json")
-	public String getJSON() throws IOException {
+	@GetMapping(path = "/auto", produces = "application/json")
+	public String createAutoRecord() throws IOException {
 		String response = null;
 		Mail mail = mailService.getImageFromGmail();
-		if(mail!=null) {
+		if(mail!=null && mail.getFile()!=null) {
 			response = openAIService.extractDataFromImage(mail.getSubject(),mail.getFile());
 			response = response.replace("```", "");
 			response = response.replace("json", "");
 			log.info("Response received from OpenAI!");
+			return callCCBackend(response);
 		}else {
 			log.info("Data not received from mail, hence not sending to OpenAI!");
 		}
-		return callCCBackend(response);
+		return null;
 	}
 	
 	public String callCCBackend(String requestBody) {
