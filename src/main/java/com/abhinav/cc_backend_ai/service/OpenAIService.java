@@ -7,11 +7,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.model.Media;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -28,6 +30,9 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Slf4j
 public class OpenAIService {
+	
+	@Value("#{${codeNameMap}}")
+	private Map<String, String> codeNameMapping;
 
 	private ChatClient chatClient;
 	private AIMasterRepository aiMasterRepository;
@@ -99,23 +104,25 @@ public class OpenAIService {
 		return chatClient.prompt().messages(userMessage).call().chatResponse().getResult().getOutput().getText();
 	}
 	
-	public String extractDataFromImage(File file) throws IOException {
+	public String extractDataFromImage(String subject, File file) throws IOException {
 		Resource fileResource = new FileSystemResource(file);
-
-		String prompt = "Extract the following fields and return JSON in the below format. stmtDate is Statement Generation Date. Do not read or store any sensitive data like credit card number etc. "
-				+ "Just return a valid json and nothing else. Dont return any unexpected charater or token in response. JSON.stringyfy(json) the response to check if its valid: " +
-                "{"
-                + "  \"name\": \"\",\n"
-                + "  \"minAmt\": ,\n"
-                + "  \"totalAmt\": ,\n"
-                + "  \"stmtDate\": \"YYYY-MM-dd\",\n"
-                + "  \"dueDate\": \"YYYY-MM-dd\",\n"
-                + "  \"payDate\": \null,\n"
-                + "  \"currentStatus\": \"Bill Generated\",\n"
-                + "  \"remarks\": \"\",\n"
-                + "  \"createdOn\": \"\",\n"
-                + "  \"modifiedOn\": \"\""
-                + "}";
+		log.info(codeNameMapping.toString());
+		String prompt = "Extract the following fields and return JSON in the below format. stmtMonthYear is of the format MMYYYY. 01 being January and 12 being December for MM."
+				+ " stmtDate is Statement Generation Date. code will be "+codeNameMapping.get(subject)+". Do not read or store any sensitive data like credit card number etc. "
+				+ " Round off the decimal amount to next integer value. Just return a valid json and nothing else. Dont return any unexpected charater or token in response. JSON.stringyfy(json) the response to check if its valid: " +
+                "{\"key\":"
+                + "{"
+                + "\"code\":\"\","
+                + "\"stmtMonthYear\":\"MMYYYY\""
+                + "},"
+                + "\"name\":\"\","
+                + "\"minAmt\":,"
+                + "\"totalAmt\":,"
+                + "\"stmtDate\":\"YYYY-MM-dd\","
+                + "\"dueDate\":\"YYYY-MM-dd\","
+                + "\"currentStatus\":\"Bill Generated\","
+                + "\"month\":\"MM\","
+                + "\"year\":\"YYYY\"}";
 
 		UserMessage userMessage = new UserMessage(prompt, new Media(MimeType.valueOf("image/jpeg"), fileResource));
 		log.info("Sending prompt to OpenAI!");

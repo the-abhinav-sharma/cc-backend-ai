@@ -9,6 +9,8 @@ import java.util.TimeZone;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.abhinav.cc_backend_ai.model.Mail;
+
 import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
@@ -38,9 +40,10 @@ public class MailService {
 	@Value("${spring.mail.imap.host}")
 	private String emailHostname;
 
-	public File getImageFromGmail() {
+	public Mail getImageFromGmail() {
 		File file = null;
 		Properties props = new Properties();
+		Mail mail = new Mail();
 		props.put("mail.store.protocol", "imaps");
 
 		try {
@@ -80,7 +83,7 @@ public class MailService {
 
 				String subject = message.getSubject();
 				if (subject != null && subject.startsWith("CC-")) {
-
+					mail.setSubject(subject.split("-")[1]);
 					if (message.isMimeType("multipart/*")) {
 
 						Multipart multipart = (Multipart) message.getContent();
@@ -95,6 +98,7 @@ public class MailService {
 								MimeBodyPart mimePart = (MimeBodyPart) part;
 								file = new File(System.getProperty("java.io.tmpdir"), mimePart.getFileName());
 								mimePart.saveFile(file);
+								mail.setFile(file);
 								log.info("Image extraction from mail successful : " + file.getName());
 
 							}
@@ -112,6 +116,6 @@ public class MailService {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		return file;
+		return mail;
 	}
 }

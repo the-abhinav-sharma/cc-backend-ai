@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.abhinav.cc_backend_ai.model.Answer;
+import com.abhinav.cc_backend_ai.model.Mail;
 import com.abhinav.cc_backend_ai.model.Question;
 import com.abhinav.cc_backend_ai.service.MailService;
 import com.abhinav.cc_backend_ai.service.OpenAIService;
@@ -76,9 +77,9 @@ public class FrontController {
 	@GetMapping(path = "/mail", produces = "application/json")
 	public String getJSON() throws IOException {
 		String response = null;
-		File file = mailService.getImageFromGmail();
-		if(file!=null) {
-			response = openAIService.extractDataFromImage(file);
+		Mail mail = mailService.getImageFromGmail();
+		if(mail!=null) {
+			response = openAIService.extractDataFromImage(mail.getSubject(),mail.getFile());
 			response = response.replace("```", "");
 			response = response.replace("json", "");
 			log.info("Response received from OpenAI!");
