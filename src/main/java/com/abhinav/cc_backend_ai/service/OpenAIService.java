@@ -106,7 +106,7 @@ public class OpenAIService {
 	
 	public String extractDataFromImage(String subject, File file) throws IOException {
 		Resource fileResource = new FileSystemResource(file);
-		log.info(codeNameMapping.toString());
+
 		String prompt = "Extract the following fields and return JSON in the below format. stmtMonthYear is of the format MMYYYY. 01 being January and 12 being December for MM."
 				+ " stmtDate is Statement Generation Date. code will be "+codeNameMapping.get(subject)+". Do not read or store any sensitive data like credit card number etc. "
 				+ " Round off the decimal amount to next integer value. Just return a valid json and nothing else. Dont return any unexpected charater or token in response. JSON.stringyfy(json) the response to check if its valid: " +

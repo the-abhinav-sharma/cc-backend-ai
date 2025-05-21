@@ -15,12 +15,16 @@ import org.springframework.ai.image.ImagePrompt;
 import org.springframework.ai.image.ImageResponse;
 import org.springframework.ai.openai.OpenAiImageModel;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 
 import com.abhinav.cc_backend_ai.model.Answer;
 import com.abhinav.cc_backend_ai.model.Mail;
@@ -43,6 +47,15 @@ public class FrontController {
 	
 	@Autowired
 	OpenAiImageModel openAiImageModel;
+	
+	@Autowired
+    private RestTemplate restTemplate;
+	
+	@Value("${authHeaderBP}")
+	private String authHeaderBP;
+	
+	@Value("${ccBackendURL}")
+	private String ccBackendURL;
 	
 	@PostMapping(path = "/ask", consumes = "application/json", produces = "application/json")
 	public Answer getAnswer(@RequestBody Question question) {
@@ -86,7 +99,16 @@ public class FrontController {
 		}else {
 			log.info("Data not received from mail, hence not sending to OpenAI!");
 		}
-		return response;
+		return callCCBackend(response);
+	}
+	
+	public String callCCBackend(String requestBody) {
+		HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", authHeaderBP);
+        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+		return restTemplate.postForEntity(ccBackendURL, entity, String.class).getBody();
+		
 	}
 
 	
