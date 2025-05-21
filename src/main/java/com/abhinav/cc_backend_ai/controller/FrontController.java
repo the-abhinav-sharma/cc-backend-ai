@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.Date;
 
 import javax.imageio.ImageIO;
 
@@ -96,7 +97,9 @@ public class FrontController {
 			response = response.replace("```", "");
 			response = response.replace("json", "");
 			log.info("Response received from OpenAI!");
-			return callCCBackend(response);
+			response = callCCBackend(response);
+			log.info("Response received from CC-Backend!");
+			return response;
 		}else {
 			log.info("Data not received from mail, hence not sending to OpenAI!");
 		}
@@ -105,17 +108,17 @@ public class FrontController {
 	
 	public String callCCBackend(String requestBody) {
 		HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", authHeaderBP);
-        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+		headers.setContentType(MediaType.APPLICATION_JSON);
+		headers.set("Authorization", authHeaderBP);
+		HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+		log.info("Calling CC-Backend..");
 		return restTemplate.postForEntity(ccBackendURL, entity, String.class).getBody();
-		
 	}
 	
 	@GetMapping(path = "/health")
 	public String health() throws IOException {
+		log.info("Inside health - " + new Date());
 		return "CC Backend AI is up and running!";
-		
 	}
 
 	
