@@ -17,7 +17,7 @@ public class ScheduledTasks {
 	@Autowired
 	FrontController controller;
 
-	@Scheduled(cron = "0 00 23 * * *", zone = "Asia/Kolkata")
+	@Scheduled(cron = "0 00 11,23 * * *", zone = "Asia/Kolkata")
 	public void execute() {
 		try {
 			controller.createAutoRecord();
