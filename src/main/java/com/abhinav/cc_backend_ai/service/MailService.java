@@ -23,7 +23,7 @@ import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.search.AndTerm;
 import jakarta.mail.search.ComparisonTerm;
 import jakarta.mail.search.FlagTerm;
-import jakarta.mail.search.ReceivedDateTerm;
+import jakarta.mail.search.SentDateTerm;
 import jakarta.mail.search.SearchTerm;
 import lombok.extern.slf4j.Slf4j;
 
@@ -71,7 +71,7 @@ public class MailService {
 			cal.set(Calendar.MILLISECOND, 0);
 			Date todayStart = cal.getTime();
 
-			ReceivedDateTerm receivedToday = new ReceivedDateTerm(ComparisonTerm.GE, todayStart);
+			SentDateTerm receivedToday = new SentDateTerm(ComparisonTerm.GE, todayStart);
 			SearchTerm searchTerm = new AndTerm(unseenFlagTerm, receivedToday);
 
 			Message[] messages = inbox.search(searchTerm);
