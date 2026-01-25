@@ -105,10 +105,10 @@ public class MailService {
 						}
 					}
 					message.setFlag(Flags.Flag.SEEN, true); // Mark as read
+					break;
 				} else {
 					log.info("No CC mails present in mailbox!");
 				}
-				break;
 			}
 			inbox.close(false);
 			store.close();
