@@ -40,12 +40,12 @@ public class EmailService {
 		h.setBcc(recipients);
 		h.setSubject("[The Daily 20] : " + digestDate);
 
-		// Enhanced HTML body with a clean container table and bulletproof image styling
 		String body = "<div style=\"background-color: #f4f4f4; padding: 20px 0; text-align: center;\">"
 				+ "<table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin: 0 auto; max-width: 680px; width: 100%; background-color: #ffffff;\">"
 				+ "<tr>" + "<td style=\"padding: 10px; text-align: center;\">"
-				+ "<img src='cid:daily5' style='display: block; width: 100%; max-width: 680px; height: auto; border: 0; outline: none; text-decoration: none;' alt='The Daily 20'>"
-				+ "</td>" + "</tr>" + "</table>" + "</div>";
+				+ "<a href=\"javascript:void(0);\" style=\"display: block; text-decoration: none; cursor: default;\">"
+				+ "<img src='cid:daily5' style='display: block; width: 100%; max-width: 680px; height: auto; max-height: none; border: 0; outline: none; text-decoration: none;' alt='The Daily 20'>"
+				+ "</a>" + "</td>" + "</tr>" + "</table>" + "</div>";
 
 		h.setText(body, true);
 
