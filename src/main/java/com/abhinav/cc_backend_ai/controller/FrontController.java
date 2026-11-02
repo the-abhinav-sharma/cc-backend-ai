@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import com.abhinav.cc_backend_ai.dailydigest.service.DailyDigestJob;
 import com.abhinav.cc_backend_ai.model.Answer;
 import com.abhinav.cc_backend_ai.model.Mail;
 import com.abhinav.cc_backend_ai.model.Question;
@@ -48,6 +49,9 @@ public class FrontController {
 	
 	@Autowired
 	OpenAiImageModel openAiImageModel;
+	
+	@Autowired
+	DailyDigestJob dailyDigestJob;
 	
 	@Autowired
     private RestTemplate restTemplate;
@@ -119,6 +123,12 @@ public class FrontController {
 	public String health() throws IOException {
 		log.info("Inside health - " + new Date());
 		return "CC Backend AI is up and running!";
+	}
+	
+	@GetMapping(path = "/news")
+	public void news() throws IOException {
+		log.info("Inside news - " + new Date());
+		dailyDigestJob.runDaily();
 	}
 
 	

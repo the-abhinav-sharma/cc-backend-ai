@@ -1,14 +1,15 @@
-# Use Eclipse Temurin (Java 21) base image
-FROM eclipse-temurin:21-jdk-alpine
+# Playwright Java 1.55.0 with browser dependencies
+FROM mcr.microsoft.com/playwright/java:v1.55.0
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the JAR file (change the name if your JAR is named differently)
+# Copy the Spring Boot JAR
 COPY target/*.jar cc-backend-ai.jar
 
-# Expose port 8080
+# Java heap for Koyeb's 512 MB RAM instance
+ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx300m"
+
+# Application port
 EXPOSE 2990
 
-# Command to run the application
 ENTRYPOINT ["java", "-jar", "cc-backend-ai.jar"]
