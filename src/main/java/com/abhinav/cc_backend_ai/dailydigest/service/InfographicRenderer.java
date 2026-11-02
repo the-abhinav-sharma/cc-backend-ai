@@ -12,6 +12,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.imageio.ImageIO;
 
@@ -24,6 +25,7 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.ScreenshotType;
+import com.microsoft.playwright.options.WaitUntilState;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,6 +37,64 @@ public class InfographicRenderer {
 
 	private static final Map<String, String> COLORS = Map.of("World", "world", "India", "india", "Delhi NCR", "delhi",
 			"Chandigarh", "chandigarh");
+
+	public byte[] render(NewsDigest digest, String digestDate) throws Exception {
+		log.info("Render start");
+
+		StringBuilder sections = new StringBuilder();
+		int number = 0;
+
+		for (String category : ORDER) {
+			List<Integer> indexes = new ArrayList<>();
+
+			for (int i = 0; i < digest.stories().size(); i++) {
+				if (category.equalsIgnoreCase(digest.stories().get(i).category())) {
+					indexes.add(i);
+				}
+			}
+
+			if (indexes.isEmpty()) {
+				continue;
+			}
+
+			String cssClass = css(category);
+
+			sections.append("<section class='group ").append(cssClass).append("'>")
+					.append("<div class='section-title'>").append("<span class='dot'></span>")
+					.append(esc(category.toUpperCase(Locale.ROOT))).append("<span class='section-line'></span>")
+					.append("</div><div class='grid'>");
+
+			for (int i : indexes) {
+				NewsStory story = digest.stories().get(i);
+				number++;
+
+				String img = imageDataUri(story.imagePath());
+
+				sections.append("<article class='card'>").append("<div class='number'>").append(number)
+						.append("</div><div class='photo'>");
+
+				if (!img.isEmpty()) {
+					sections.append("<img src='").append(esc(img)).append("' alt='").append(esc(story.headline()))
+							.append("'>");
+				} else {
+					sections.append("<div class='placeholder'>").append(esc(category.toUpperCase(Locale.ROOT)))
+							.append("</div>");
+				}
+
+				sections.append("</div><div class='copy'>").append("<h2>").append(esc(story.headline()))
+						.append("</h2><p>").append(esc(story.summary())).append("</p><div class='meta'>")
+						.append("<span>")
+						.append(esc(
+								sourceLabel(story.category()) != null ? sourceLabel(story.category()) : story.source()))
+						.append("</span><span>").append(esc(story.publishedDate()))
+						.append("</span></div></div></article>");
+			}
+
+			sections.append("</div></section>");
+		}
+
+		return createInfographicSafely(digest, sections, digestDate);
+	}
 
 	private byte[] createInfographic(NewsDigest digest, StringBuilder sections, String digestDate) throws IOException {
 
@@ -182,11 +242,6 @@ public class InfographicRenderer {
 				      align-items: start;
 				    }
 
-				    /*
-				     * Row 1: image + headline
-				     * Row 2: description across full width
-				     * Row 3: source/date across full width
-				     */
 				    .card {
 				      position: relative;
 				      display: grid;
@@ -255,11 +310,6 @@ public class InfographicRenderer {
 				      letter-spacing: 0.5px;
 				    }
 
-				    /*
-				     * Flatten .copy so its children become grid items
-				     * of .card. This lets the description and metadata
-				     * span the complete width.
-				     */
 				    .copy {
 				      display: contents;
 				    }
@@ -339,7 +389,7 @@ public class InfographicRenderer {
 				      <h1>THE DAILY <span>20</span></h1>
 				      <div class="date">__DIGEST_DATE__</div>
 				      <div class="coverage">
-				        WORLD &nbsp; • &nbsp; INDIA &nbsp; • &nbsp; DELHI NCR &nbsp; • &nbsp; CHANDIGARH
+				        WORLD   •   INDIA   •   DELHI NCR   •   CHANDIGARH
 				      </div>
 				    </header>
 
@@ -360,6 +410,9 @@ public class InfographicRenderer {
 		html = html.replace("__DIGEST_DATE__", esc(digestDate)).replace("__DIGEST_SECTIONS__", sections.toString());
 		log.info("RENDER: Before Playwright creation");
 		logMemory("before Playwright creation");
+
+		System.gc(); // Clear heap before launching browser to protect 512MB RAM limit
+
 		try (Playwright p = Playwright.create()) {
 			logMemory("after Playwright creation");
 			log.info("RENDER: Playwright created");
@@ -370,7 +423,7 @@ public class InfographicRenderer {
 				browser = p.chromium()
 						.launch(new BrowserType.LaunchOptions().setHeadless(true).setTimeout(60_000)
 								.setArgs(List.of("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-										"--disable-software-rasterizer")));
+										"--disable-software-rasterizer", "--no-zygote", "--single-process")));
 			} catch (Exception ex) {
 				log.error("RENDER: Chromium launch failed", ex);
 				throw ex;
@@ -379,65 +432,67 @@ public class InfographicRenderer {
 			log.info("RENDER: Chromium launched");
 
 			try {
-//				Page page = browser
-//						.newPage(new Browser.NewPageOptions().setViewportSize(390, 1200).setDeviceScaleFactor(1));
-//				log.info("RENDER: Page created");
-//				log.info("RENDER: HTML characters={}, stories={}", html.length(), digest.stories().size());
-//				log.info("RENDER: Before setContent");
-//				page.setContent(html);
-//				log.info("RENDER: After setContent");
-//				page.waitForLoadState();
-//				log.info("RENDER: HTML loaded");
-//				// Wait for images to load before taking the screenshot.
-//				page.evaluate("""
-//						() => Promise.all(
-//						    Array.from(document.images).map(img => {
-//						        if (img.complete) return Promise.resolve();
-//						        return new Promise(resolve => {
-//						            img.onload = resolve;
-//						            img.onerror = resolve;
-//						        });
-//						    })
-//						)
-//						""");
-//
-//				byte[] output = page
-//						.screenshot(new Page.ScreenshotOptions().setType(ScreenshotType.PNG).setFullPage(true));
-//				log.info("RENDER: Screenshot completed, size={} MB",
-//						String.format("%.2f", output.length / (1024.0 * 1024.0)));
-//				BufferedImage image = ImageIO.read(new ByteArrayInputStream(output));
-//
-//				if (image != null) {
-//					log.info("Infographic: {} x {} pixels, {} MB", image.getWidth(), image.getHeight(),
-//							String.format("%.2f", output.length / (1024.0 * 1024.0)));
-//				}
-//				log.info("RENDER: Browser closed");
-//				page.close();
-//				return output;
-
 				Page page = browser
 						.newPage(new Browser.NewPageOptions().setViewportSize(390, 1000).setDeviceScaleFactor(2));
 
+				page.setDefaultTimeout(90_000);
+				page.setDefaultNavigationTimeout(90_000);
+
 				log.info("RENDER: Page created");
 				log.info("RENDER: Before page.setContent()");
-				page.setContent(html);
-				log.info("RENDER: After page.setContent()");
 
-				page.waitForLoadState();
-				log.info("RENDER: After page.waitForLoadState()");
+				long loadStart = System.nanoTime();
 
-				// Wait until all embedded images have finished loading.
+				page.setContent(html,
+						new Page.SetContentOptions().setWaitUntil(WaitUntilState.LOAD).setTimeout(60_000));
+
+				log.info("RENDER: HTML loaded in {} ms", (System.nanoTime() - loadStart) / 1_000_000);
+
+				log.info("RENDER: Waiting for embedded images");
+
 				page.evaluate("""
-						() => Promise.all(
-						    Array.from(document.images).map(img => {
-						        if (img.complete) return Promise.resolve();
-						        return new Promise(resolve => {
-						            img.onload = resolve;
-						            img.onerror = resolve;
-						        });
-						    })
-						)
+						async () => {
+						    const images = Array.from(document.images);
+
+						    await Promise.race([
+						        Promise.all(
+						            images.map(img => {
+						                if (img.complete) {
+						                    return Promise.resolve();
+						                }
+
+						                return new Promise(resolve => {
+						                    img.addEventListener("load", resolve, { once: true });
+						                    img.addEventListener("error", resolve, { once: true });
+						                });
+						            })
+						        ),
+						        new Promise((_, reject) =>
+						            setTimeout(
+						                () => reject(new Error("Image loading timed out")),
+						                15000
+						            )
+						        )
+						    ]);
+
+						    return images.length;
+						}
 						""");
+
+				log.info("RENDER: Embedded image wait completed");
+
+				log.info("RENDER: Waiting for fonts");
+
+				page.evaluate("""
+						    async () => {
+						        await document.fonts.ready;
+						    }
+						""");
+
+				log.info("RENDER: Fonts ready");
+				
+				// completely finish painting layout boxes under strict 0.1 vCPU throttling
+				page.waitForTimeout(200);
 
 				byte[] output = screenshotInSlices(page);
 
@@ -449,8 +504,16 @@ public class InfographicRenderer {
 				return output;
 
 			} finally {
-				browser.close();
-				log.info("Render finish");
+				try {
+					if (browser.isConnected()) {
+						browser.close();
+					}
+				} catch (Exception closeEx) {
+					log.warn("RENDER: Error while closing Chromium", closeEx);
+				} finally {
+					System.gc(); // Clean up native memory blocks
+					log.info("RENDER: Render cleanup finished");
+				}
 			}
 		}
 	}
@@ -460,113 +523,10 @@ public class InfographicRenderer {
 	}
 
 	private String esc(String value) {
-		if (value == null) {
+		if (value == null)
 			return "";
-		}
-
-		return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-				.replace("'", "&#39;");
+		return value.replace('&', '&').replace('<', '<').replace('>', '>').replace('"', '"').replace('\'', '\'');
 	}
-
-	public byte[] render(NewsDigest digest, String digestDate) throws IOException {
-		log.info("Render start");
-
-		StringBuilder sections = new StringBuilder();
-		int number = 0;
-
-		for (String category : ORDER) {
-			List<Integer> indexes = new ArrayList<>();
-
-			for (int i = 0; i < digest.stories().size(); i++) {
-				if (category.equalsIgnoreCase(digest.stories().get(i).category())) {
-					indexes.add(i);
-				}
-			}
-
-			if (indexes.isEmpty()) {
-				continue;
-			}
-
-			String cssClass = css(category);
-
-			sections.append("<section class='group ").append(cssClass).append("'>")
-					.append("<div class='section-title'>").append("<span class='dot'></span>")
-					.append(esc(category.toUpperCase(Locale.ROOT))).append("<span class='section-line'></span>")
-					.append("</div><div class='grid'>");
-
-			for (int i : indexes) {
-				NewsStory story = digest.stories().get(i);
-				number++;
-
-				String img = imageDataUri(story.imagePath());
-
-				sections.append("<article class='card'>").append("<div class='number'>").append(number)
-						.append("</div><div class='photo'>");
-
-				if (!img.isEmpty()) {
-					sections.append("<img src='").append(esc(img)).append("' alt='").append(esc(story.headline()))
-							.append("'>");
-				} else {
-					sections.append("<div class='placeholder'>").append(esc(category.toUpperCase(Locale.ROOT)))
-							.append("</div>");
-				}
-
-				sections.append("</div><div class='copy'>").append("<h2>").append(esc(story.headline()))
-						.append("</h2><p>").append(esc(story.summary())).append("</p><div class='meta'>")
-						.append("<span>")
-						.append(esc(
-								sourceLabel(story.category()) != null ? sourceLabel(story.category()) : story.source()))
-						.append("</span><span>").append(esc(story.publishedDate()))
-						.append("</span></div></div></article>");
-			}
-
-			sections.append("</div></section>");
-		}
-
-		return createInfographic(digest, sections, digestDate);
-	}
-
-//	private String imageDataUri(String imagePath) throws IOException {
-//		if (imagePath == null || imagePath.isBlank()) {
-//			return "";
-//		}
-//
-//		Path path = Path.of(imagePath);
-//
-//		if (!Files.isRegularFile(path)) {
-//			log.error("Image file not found: " + imagePath);
-//			return "";
-//		}
-//
-//		byte[] bytes = Files.readAllBytes(path);
-//
-//		if (bytes.length == 0) {
-//			log.error("Image file is empty: " + imagePath);
-//			return "";
-//		}
-//
-//		String contentType = Files.probeContentType(path);
-//
-//		if (contentType == null || !contentType.startsWith("image/")) {
-//			String filename = path.getFileName().toString().toLowerCase(Locale.ROOT);
-//
-//			if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) {
-//				contentType = "image/jpeg";
-//			} else if (filename.endsWith(".png")) {
-//				contentType = "image/png";
-//			} else if (filename.endsWith(".webp")) {
-//				contentType = "image/webp";
-//			} else if (filename.endsWith(".gif")) {
-//				contentType = "image/gif";
-//			} else if (filename.endsWith(".avif")) {
-//				contentType = "image/avif";
-//			} else {
-//				throw new IOException("Unable to determine image type: " + imagePath);
-//			}
-//		}
-//
-//		return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
-//	}
 
 	private String imageDataUri(String imagePath) throws IOException {
 		if (imagePath == null || imagePath.isBlank()) {
@@ -580,7 +540,6 @@ public class InfographicRenderer {
 			return "";
 		}
 
-		// Avoid loading excessively large source files into memory.
 		long fileSize = Files.size(path);
 		if (fileSize == 0 || fileSize > 10 * 1024 * 1024) {
 			log.warn("Skipping image with invalid or excessive size: {} bytes", fileSize);
@@ -595,7 +554,7 @@ public class InfographicRenderer {
 		}
 
 		try {
-			int maxWidth = 400;
+			int maxWidth = 300; // Optimized for memory footprint at 2x scaling
 			int originalWidth = original.getWidth();
 			int originalHeight = original.getHeight();
 
@@ -627,6 +586,7 @@ public class InfographicRenderer {
 			}
 
 			byte[] compressedBytes = output.toByteArray();
+			resized.flush();
 
 			log.info("Image compressed: {}x{} -> {}x{}, {} KB", originalWidth, originalHeight, width, height,
 					compressedBytes.length / 1024);
@@ -643,13 +603,13 @@ public class InfographicRenderer {
 		case "World" -> "World News Headlines";
 		case "Delhi NCR" -> "Delhi News";
 		case "Chandigarh" -> "Chandigarh News";
-		default -> null; // Keep the existing source for India
+		default -> null;
 		};
 	}
 
 	private byte[] screenshotInSlices(Page page) throws IOException {
 
-		final int scale = 2;
+		final int scale = 2; // Kept at 2x for sharp typography and image fidelity
 		final int viewportHeight = 1000;
 		final int width = 390;
 
@@ -668,6 +628,8 @@ public class InfographicRenderer {
 
 		BufferedImage stitched = new BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_RGB);
 
+		log.info("RENDER: Stitched image allocated successfully");
+
 		Graphics2D graphics = stitched.createGraphics();
 
 		try {
@@ -680,18 +642,61 @@ public class InfographicRenderer {
 
 				scrollY = Math.min(scrollY, maxScrollY);
 
-				page.evaluate("(y) => window.scrollTo(0, y)", scrollY);
+				logMemory("before screenshot y=" + scrollY);
+				log.info("RENDER: Scrolling to y={}", scrollY);
 
-				// Allow the browser to finish scrolling and painting.
+				page.evaluate("(y) => window.scrollTo(0, y)", scrollY);
 				page.waitForTimeout(100);
 
-				byte[] sliceBytes = page
-						.screenshot(new Page.ScreenshotOptions().setType(ScreenshotType.PNG).setFullPage(false).setTimeout(120_000));
+				log.info("RENDER: Starting screenshot at y={}", scrollY);
+				logMemory("before screenshot y=" + scrollY);
 
-				BufferedImage slice = ImageIO.read(new ByteArrayInputStream(sliceBytes));
+				long screenshotStart = System.nanoTime();
+				byte[] sliceBytes;
+
+				try {
+					sliceBytes = page.screenshot(new Page.ScreenshotOptions().setType(ScreenshotType.PNG)
+							.setFullPage(false).setTimeout(60_000));
+
+					long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
+
+					log.info("RENDER: Screenshot completed at y={}; duration={} ms; size={} KB", scrollY, screenshotMs,
+							sliceBytes.length / 1024);
+
+					logMemory("after screenshot y=" + scrollY);
+
+				} catch (RuntimeException | Error e) {
+					long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
+
+					log.error("RENDER: Screenshot failed at y={}; duration={} ms", scrollY, screenshotMs, e);
+
+					logMemory("screenshot failed y=" + scrollY);
+					throw e;
+				}
+
+				BufferedImage slice;
+
+				try {
+					log.info("RENDER: Decoding screenshot at y={}", scrollY);
+					logMemory("before decode y=" + scrollY);
+					slice = ImageIO.read(new ByteArrayInputStream(sliceBytes));
+					logMemory("after decode y=" + scrollY);
+				} finally {
+					sliceBytes = null;
+				}
 
 				if (slice == null) {
 					throw new IOException("Unable to decode screenshot at scrollY=" + scrollY);
+				}
+
+				log.info("RENDER: Screenshot decoded at y={}; dimensions={}x{}", scrollY, slice.getWidth(),
+						slice.getHeight());
+
+				if (slice.getWidth() != outputWidth) {
+					slice.flush();
+
+					throw new IOException(
+							"Unexpected screenshot width: " + slice.getWidth() + ", expected: " + outputWidth);
 				}
 
 				try {
@@ -704,12 +709,14 @@ public class InfographicRenderer {
 					int copyCssHeight = Math.min(availableCssHeight, remainingCssHeight);
 
 					if (copyCssHeight <= 0) {
-						throw new IOException("Invalid screenshot slice height at scrollY=" + scrollY);
+						break;
 					}
 
+					logMemory("before stitch y=" + scrollY);
 					graphics.drawImage(slice, 0, stitchedCssHeight * scale, outputWidth,
 							(stitchedCssHeight + copyCssHeight) * scale, 0, cropTopCss * scale, outputWidth,
 							(cropTopCss + copyCssHeight) * scale, null);
+					logMemory("after stitch y=" + scrollY);
 
 					stitchedCssHeight += copyCssHeight;
 
@@ -719,9 +726,10 @@ public class InfographicRenderer {
 					slice.flush();
 				}
 
-				// Move forward, allowing the last slice to overlap.
 				if (stitchedCssHeight < documentHeight) {
 					scrollY = Math.min(scrollY + viewportHeight, Math.max(0, documentHeight - viewportHeight));
+				} else {
+					break;
 				}
 			}
 
@@ -748,5 +756,21 @@ public class InfographicRenderer {
 		long maxMb = runtime.maxMemory() / (1024 * 1024);
 
 		log.info("MEMORY [{}]: heapUsed={}MB, heapMax={}MB", stage, usedMb, maxMb);
+	}
+
+	private final ReentrantLock renderLock = new ReentrantLock();
+
+	public byte[] createInfographicSafely(NewsDigest digest, StringBuilder sections, String digestDate)
+			throws Exception {
+
+		if (!renderLock.tryLock()) {
+			throw new IllegalStateException("Another infographic render is already running");
+		}
+
+		try {
+			return createInfographic(digest, sections, digestDate);
+		} finally {
+			renderLock.unlock();
+		}
 	}
 }
