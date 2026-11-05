@@ -656,7 +656,7 @@ public class InfographicRenderer {
 
 				try {
 					sliceBytes = page.screenshot(new Page.ScreenshotOptions().setType(ScreenshotType.PNG)
-							.setFullPage(false).setTimeout(60_000));
+							.setFullPage(false).setTimeout(120_000));
 
 					long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
 
