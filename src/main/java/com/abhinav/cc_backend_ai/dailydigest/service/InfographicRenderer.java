@@ -724,7 +724,10 @@ public class InfographicRenderer {
 
 				} finally {
 					slice.flush();
+					slice = null; // Ensure pointer is cleared immediately
 				}
+
+				System.gc();
 
 				if (stitchedCssHeight < documentHeight) {
 					scrollY = Math.min(scrollY + viewportHeight, Math.max(0, documentHeight - viewportHeight));
