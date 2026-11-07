@@ -490,11 +490,12 @@ public class InfographicRenderer {
 						""");
 
 				log.info("RENDER: Fonts ready");
-				
+
 				// completely finish painting layout boxes under strict 0.1 vCPU throttling
 				page.waitForTimeout(200);
 
-				byte[] output = screenshotInSlices(page);
+				//byte[] output = screenshotInSlices(page);
+				byte[] output = captureFullPage(page);
 
 				log.info("RENDER: Final screenshot completed, size={} MB",
 						String.format("%.2f", output.length / (1024.0 * 1024.0)));
@@ -775,5 +776,47 @@ public class InfographicRenderer {
 		} finally {
 			renderLock.unlock();
 		}
+	}
+
+	private byte[] captureFullPage(Page page) throws IOException {
+		final int width = 390;
+
+		// 1. Get total document height
+		Number heightValue = (Number) page.evaluate("() => document.documentElement.scrollHeight");
+		int documentHeight = heightValue.intValue();
+
+		if (documentHeight <= 0) {
+			throw new IOException("Invalid document height: " + documentHeight);
+		}
+
+		log.info("RENDER: Resizing page viewport to full height: {}x{}", width, documentHeight);
+
+		// 2. Expand viewport to fit the ENTIRE document height at once.
+		// This forces Chromium to layout and paint everything in a single atomic
+		// operation without scrolling.
+		page.setViewportSize(width, documentHeight);
+		page.waitForTimeout(300); // Brief settlement buffer for layout expansion
+
+		logMemory("before full-page screenshot");
+		long screenshotStart = System.nanoTime();
+
+		byte[] pngBytes;
+		try {
+			// 3. Take a single snapshot of the entire expanded viewport
+			pngBytes = page.screenshot(
+					new Page.ScreenshotOptions().setType(ScreenshotType.PNG).setFullPage(true).setTimeout(120_000));
+
+			long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
+			log.info("RENDER: Full-page screenshot completed; duration={} ms; size={} KB", screenshotMs,
+					pngBytes.length / 1024);
+
+		} catch (RuntimeException | Error e) {
+			long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
+			log.error("RENDER: Full-page screenshot failed; duration={} ms", screenshotMs, e);
+			throw e;
+		}
+
+		logMemory("after full-page screenshot");
+		return pngBytes;
 	}
 }
