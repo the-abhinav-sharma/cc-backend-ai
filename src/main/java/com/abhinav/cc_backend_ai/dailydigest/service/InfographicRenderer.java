@@ -494,8 +494,8 @@ public class InfographicRenderer {
 				// completely finish painting layout boxes under strict 0.1 vCPU throttling
 				page.waitForTimeout(200);
 
-				//byte[] output = screenshotInSlices(page);
-				byte[] output = captureFullPage(page);
+				// byte[] output = screenshotInSlices(page);
+				byte[] output = captureInFixedSlices(page);
 
 				log.info("RENDER: Final screenshot completed, size={} MB",
 						String.format("%.2f", output.length / (1024.0 * 1024.0)));
@@ -818,5 +818,90 @@ public class InfographicRenderer {
 
 		logMemory("after full-page screenshot");
 		return pngBytes;
+	}
+
+	private byte[] captureInFixedSlices(Page page) throws IOException {
+		final int viewportHeight = 1000;
+		final int width = 390;
+		final int scale = 2; // Matches your device scale factor
+
+		// 1. Get total document height
+		Number heightValue = (Number) page.evaluate("() => document.documentElement.scrollHeight");
+		int documentHeight = heightValue.intValue();
+
+		if (documentHeight <= 0) {
+			throw new IOException("Invalid document height: " + documentHeight);
+		}
+
+		// 2. CRITICAL FIX: Expand the viewport to match the full document height 
+		// so that clip coordinates from y=0 up to documentHeight are fully inside the image canvas.
+		log.info("RENDER: Resizing viewport to full height for clipping: {}x{}", width, documentHeight);
+		page.setViewportSize(width, documentHeight);
+		page.waitForTimeout(250); // Settlement buffer
+
+		int outputWidth = width * scale;
+		int outputHeight = documentHeight * scale;
+
+		log.info("RENDER: Capturing {} x {} CSS pixels via fixed clips", width, documentHeight);
+
+		BufferedImage stitched = new BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_RGB);
+		Graphics2D graphics = stitched.createGraphics();
+
+		try {
+			int currentY = 0;
+			while (currentY < documentHeight) {
+				int sliceHeight = Math.min(viewportHeight, documentHeight - currentY);
+
+				log.info("RENDER: Taking fixed clip screenshot at y={}, height={}", currentY, sliceHeight);
+
+				long screenshotStart = System.nanoTime();
+				byte[] sliceBytes;
+
+				try {
+					// Capture a fixed rectangle clip at absolute coordinates (NO SCROLLING)
+					sliceBytes = page.screenshot(new Page.ScreenshotOptions()
+							.setType(ScreenshotType.PNG)
+							.setClip((double) 0, (double) currentY, (double) width, (double) sliceHeight)
+							.setTimeout(120_000));
+
+					long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
+					log.info("RENDER: Clip completed at y={}; duration={} ms; size={} KB", 
+							currentY, screenshotMs, sliceBytes.length / 1024);
+
+				} catch (RuntimeException | Error e) {
+					log.error("RENDER: Clip failed at y={}", currentY, e);
+					throw e;
+				}
+
+				BufferedImage slice = ImageIO.read(new ByteArrayInputStream(sliceBytes));
+				sliceBytes = null; // Free memory
+
+				if (slice == null) {
+					throw new IOException("Unable to decode screenshot clip at y=" + currentY);
+				}
+
+				try {
+					// Draw directly into the final stitched image at 2x scale
+					graphics.drawImage(slice, 0, currentY * scale, outputWidth, (currentY + sliceHeight) * scale,
+							0, 0, slice.getWidth(), slice.getHeight(), null);
+				} finally {
+					slice.flush();
+				}
+
+				currentY += sliceHeight;
+				System.gc(); // Clean up heap between tiles
+			}
+
+			try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+				if (!ImageIO.write(stitched, "png", output)) {
+					throw new IOException("PNG encoder is unavailable");
+				}
+				return output.toByteArray();
+			}
+
+		} finally {
+			graphics.dispose();
+			stitched.flush();
+		}
 	}
 }
