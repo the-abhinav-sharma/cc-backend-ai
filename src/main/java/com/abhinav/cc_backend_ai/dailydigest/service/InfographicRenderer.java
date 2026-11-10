@@ -547,7 +547,13 @@ public class InfographicRenderer {
 			return "";
 		}
 
-		BufferedImage original = ImageIO.read(path.toFile());
+		BufferedImage original;
+		try {
+		    original = ImageIO.read(path.toFile());
+		} catch (Exception e) {
+		    log.warn("Failed to decode image due to color profile or corruption: {}", imagePath, e);
+		    return "";
+		}
 
 		if (original == null) {
 			log.warn("Unsupported or unreadable image: {}", imagePath);
@@ -804,7 +810,7 @@ public class InfographicRenderer {
 		try {
 			// 3. Take a single snapshot of the entire expanded viewport
 			pngBytes = page.screenshot(
-					new Page.ScreenshotOptions().setType(ScreenshotType.PNG).setFullPage(true).setTimeout(120_000));
+					new Page.ScreenshotOptions().setType(ScreenshotType.PNG).setFullPage(true).setTimeout(180_000));
 
 			long screenshotMs = (System.nanoTime() - screenshotStart) / 1_000_000;
 			log.info("RENDER: Full-page screenshot completed; duration={} ms; size={} KB", screenshotMs,
