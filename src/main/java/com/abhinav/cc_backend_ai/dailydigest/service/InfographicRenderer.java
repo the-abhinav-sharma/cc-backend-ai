@@ -449,7 +449,7 @@ public class InfographicRenderer {
 
 				try {
 					page.navigate("file://" + tempHtmlFile.toAbsolutePath().toString(), new Page.NavigateOptions()
-							.setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60_000));
+							.setWaitUntil(WaitUntilState.COMMIT).setTimeout(120_000));
 				} finally {
 					try {
 						Files.deleteIfExists(tempHtmlFile);
