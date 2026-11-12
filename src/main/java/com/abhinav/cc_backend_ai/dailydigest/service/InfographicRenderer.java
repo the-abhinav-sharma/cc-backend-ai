@@ -421,9 +421,9 @@ public class InfographicRenderer {
 			Browser browser;
 			try {
 				browser = p.chromium()
-						.launch(new BrowserType.LaunchOptions().setHeadless(true).setTimeout(60_000)
+						.launch(new BrowserType.LaunchOptions().setHeadless(true).setTimeout(120_000)
 								.setArgs(List.of("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-										"--disable-software-rasterizer", "--no-zygote", "--single-process")));
+										"--no-zygote", "--single-process")));
 			} catch (Exception ex) {
 				log.error("RENDER: Chromium launch failed", ex);
 				throw ex;
