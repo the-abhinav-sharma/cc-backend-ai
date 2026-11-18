@@ -21,13 +21,13 @@ import lombok.extern.slf4j.Slf4j;
 public class DailyDigestJob {
 	private final RssNewsService rss;
 	private final DigestCreator selection;
-	private final InfographicRenderer renderer;
+	private final PureJavaInfographicRenderer renderer;
 	private final EmailService email;
 	private final PngOptimizationService pngOptimizationService;
 	@Value("${digest.timezone}")
 	private String timezone;
 
-	public DailyDigestJob(RssNewsService r, DigestCreator s, InfographicRenderer x, EmailService e,
+	public DailyDigestJob(RssNewsService r, DigestCreator s, PureJavaInfographicRenderer x, EmailService e,
 			PngOptimizationService p) {
 		rss = r;
 		selection = s;
