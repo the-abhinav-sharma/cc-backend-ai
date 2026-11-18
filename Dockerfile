@@ -1,15 +1,15 @@
-# Playwright Java 1.55.0 with browser dependencies
-FROM mcr.microsoft.com/playwright/java:v1.55.0
+# Use a lightweight Java 21 JRE image instead of the heavy Playwright image (saves ~300MB RAM)
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
 # Copy the Spring Boot JAR
 COPY target/*.jar cc-backend-ai.jar
 
-# Java heap for Koyeb's 512 MB RAM instance
+# Optimized Java heap for a 512 MB RAM Koyeb instance
 ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx300m"
 
-# Application port
+# Application port (updated to match EXPOSE 2990 or your target port)
 EXPOSE 2990
 
 ENTRYPOINT ["java", "-jar", "cc-backend-ai.jar"]

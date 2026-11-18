@@ -47,11 +47,11 @@ public class PureJavaInfographicRenderer {
 	}
 
 	private byte[] generateInfographicImage(NewsDigest digest, String digestDate) throws IOException {
-		int width = 1080; // 540px crisp mobile base width scaled 2x
+		int width = 1080;
 		int padding = 32;
 		int contentWidth = width - (padding * 2);
 
-		log.info("[InfographicRenderer] Grouping stories by priority categories...");
+		log.debug("[InfographicRenderer] Grouping stories by priority categories...");
 		Map<String, List<NewsStory>> grouped = new LinkedHashMap<>();
 		int totalStoriesCount = 0;
 		for (String cat : ORDER) {
@@ -61,37 +61,37 @@ public class PureJavaInfographicRenderer {
 			if (!stories.isEmpty()) {
 				grouped.put(cat, stories);
 				totalStoriesCount += stories.size();
-				log.info("   -> Category '{}': {} stories found", cat, stories.size());
+				log.debug("   -> Category '{}': {} stories found", cat, stories.size());
 			}
 		}
 		log.info("[InfographicRenderer] Total stories grouped across categories: {}", totalStoriesCount);
 
-		// Dummy Graphics2D context for accurate font metrics measurement during height calculation
 		BufferedImage dummyCanvas = new BufferedImage(width, 100, BufferedImage.TYPE_INT_RGB);
 		Graphics2D dummyG2d = dummyCanvas.createGraphics();
 		dummyG2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		dummyG2d.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
 
 		Font headlineFont = new Font("Arial", Font.BOLD, 36);
 		Font summaryFont = new Font("Arial", Font.PLAIN, 32);
 
 		int cardInnerMargin = 28;
 		int textWidth = contentWidth - (cardInnerMargin * 2);
-		int imgW = contentWidth - (cardInnerMargin * 2);
-		int imgH = 460; // Standard layout photo container height
-		int imageToHeadlineGap = 45; // Generous space between image and headline title
+		int imgH = 460;
+		int imageToHeadlineGap = 45;
 
-		log.info("[InfographicRenderer] Calculating dynamic canvas height...");
-		int estimatedHeight = 320; // Header banner
+		log.debug("[InfographicRenderer] Calculating dynamic canvas height...");
+		int estimatedHeight = 320;
 		for (Map.Entry<String, List<NewsStory>> entry : grouped.entrySet()) {
-			estimatedHeight += 90; // Section title & padding
-			for (NewsStory story : entry.getValue()) {
+			estimatedHeight += 90;
+			for (int i = 0; i < entry.getValue().size(); i++) {
+				NewsStory story = entry.getValue().get(i);
 				int headlineHeight = measureWrappedTextHeight(dummyG2d, story.headline(), headlineFont, textWidth, 46, 3);
 				int summaryHeight = measureWrappedTextHeight(dummyG2d, story.summary(), summaryFont, textWidth, 42, 4);
 				int cardContentHeight = (cardInnerMargin * 2) + imgH + imageToHeadlineGap + headlineHeight + 16 + summaryHeight + 24 + 30;
-				estimatedHeight += cardContentHeight + 28; // Card + gap
+				estimatedHeight += cardContentHeight + 28;
 			}
 		}
-		estimatedHeight += 200; // Footer
+		estimatedHeight += 200;
 		dummyG2d.dispose();
 		dummyCanvas.flush();
 		log.info("[InfographicRenderer] Canvas dimensions calculated: Width = {}, Height = {}px", width, estimatedHeight);
@@ -102,8 +102,11 @@ public class PureJavaInfographicRenderer {
 		try {
 			g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			g2d.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
 			g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-			g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+			g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+			g2d.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
+			g2d.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
 
 			// Background fill (#edf2f8)
 			g2d.setColor(new Color(237, 242, 248));
@@ -112,7 +115,7 @@ public class PureJavaInfographicRenderer {
 			int y = padding;
 
 			// 1. HEADER BANNER
-			log.info("[InfographicRenderer] Drawing header banner...");
+			log.debug("[InfographicRenderer] Drawing header banner...");
 			GradientPaint headerGradient = new GradientPaint(
 					padding, y, new Color(7, 29, 67),
 					padding + contentWidth, y + 260, new Color(6, 68, 123)
@@ -124,11 +127,20 @@ public class PureJavaInfographicRenderer {
 			g2d.setFont(new Font("Arial", Font.BOLD, 20));
 			g2d.drawString("YOUR DAILY NEWS BRIEFING @ 8.2.8", padding + 40, y + 48);
 
+			Font titleFont = new Font("Arial", Font.BOLD, 60);
+			g2d.setFont(titleFont);
+			String prefixText = "THE DAILY ";
+			int prefixX = padding + 40;
+			int titleY = y + 122;
+
 			g2d.setColor(Color.WHITE);
-			g2d.setFont(new Font("Arial", Font.BOLD, 60));
-			g2d.drawString("THE DAILY ", padding + 40, y + 122);
+			g2d.drawString(prefixText, prefixX, titleY);
+
+			FontMetrics fmTitle = g2d.getFontMetrics(titleFont);
+			int prefixWidth = fmTitle.stringWidth(prefixText);
+
 			g2d.setColor(new Color(42, 196, 245));
-			g2d.drawString("20", padding + 370, y + 122);
+			g2d.drawString("20", prefixX + prefixWidth, titleY);
 
 			g2d.setColor(new Color(211, 231, 255));
 			g2d.setFont(new Font("Arial", Font.PLAIN, 24));
@@ -145,6 +157,7 @@ public class PureJavaInfographicRenderer {
 			y += 300;
 
 			int storyNumber = 0;
+			int imgW = contentWidth - (cardInnerMargin * 2);
 
 			// 2. SECTIONS & VERTICAL CARDS
 			for (Map.Entry<String, List<NewsStory>> entry : grouped.entrySet()) {
@@ -152,9 +165,8 @@ public class PureJavaInfographicRenderer {
 				List<NewsStory> stories = entry.getValue();
 
 				Color catColor = getCategoryColor(category);
-				log.info("[InfographicRenderer] Rendering category section: '{}' ({} stories)", category, stories.size());
+				log.debug("[InfographicRenderer] Rendering category section: '{}' ({} stories)", category, stories.size());
 
-				// Section Title
 				g2d.setColor(catColor);
 				g2d.fillOval(padding, y + 8, 22, 22);
 
@@ -166,13 +178,14 @@ public class PureJavaInfographicRenderer {
 
 				y += 65;
 
-				for (NewsStory story : stories) {
+				for (int i = 0; i < stories.size(); i++) {
+					NewsStory story = stories.get(i);
 					storyNumber++;
 
 					int imgX = padding + cardInnerMargin;
 					int imgY = y + cardInnerMargin;
 
-					int headlineY = imgY + imgH + imageToHeadlineGap; // Ample space between image bottom and headline
+					int headlineY = imgY + imgH + imageToHeadlineGap;
 					int headlineHeight = measureWrappedTextHeight(g2d, story.headline(), headlineFont, textWidth, 46, 3);
 
 					int summaryY = headlineY + headlineHeight + 16;
@@ -181,19 +194,22 @@ public class PureJavaInfographicRenderer {
 					int metaY = summaryY + summaryHeight + 24;
 					int cardHeight = (metaY + 50) - y;
 
-					// Draw Card Background & Border
 					g2d.setColor(new Color(251, 253, 255));
 					g2d.fillRoundRect(padding, y, contentWidth, cardHeight, 28, 28);
 					g2d.setColor(new Color(214, 229, 245));
 					g2d.setStroke(new BasicStroke(2.5f));
 					g2d.drawRoundRect(padding, y, contentWidth, cardHeight, 28, 28);
 
-					// Draw Non-Stretching Aspect-Ratio Preserved Image
-					BufferedImage storyImg = loadStoryImage(story.imagePath());
+					// Load and render image with Uniform Cover-Crop (object-fit: cover) for absolute evenness
+					log.trace("[InfographicRenderer] Loading image for story #{}: {}", storyNumber, story.imagePath());
+					BufferedImage storyImg = loadAndSmoothScaleImage(story.imagePath(), imgW, imgH);
 					if (storyImg != null) {
 						Shape oldClip = g2d.getClip();
 						g2d.setClip(new java.awt.geom.RoundRectangle2D.Float(imgX, imgY, imgW, imgH, 20, 20));
-						drawImageProportionally(g2d, storyImg, imgX, imgY, imgW, imgH);
+						
+						// Uniform fill cover crop
+						drawImageCover(g2d, storyImg, imgX, imgY, imgW, imgH);
+						
 						g2d.setClip(oldClip);
 						storyImg.flush();
 					} else {
@@ -204,7 +220,6 @@ public class PureJavaInfographicRenderer {
 						drawCenteredString(g2d, category.toUpperCase(), imgX, imgY, imgW, imgH);
 					}
 
-					// Number Badge on Top-Left of Image
 					int badgeSize = 56;
 					int badgeX = imgX + 16;
 					int badgeY = imgY + 16;
@@ -216,17 +231,14 @@ public class PureJavaInfographicRenderer {
 					g2d.setFont(new Font("Arial", Font.BOLD, 28));
 					drawCenteredString(g2d, String.valueOf(storyNumber), badgeX, badgeY, badgeSize, badgeSize);
 
-					// Render Headline
 					g2d.setColor(new Color(9, 43, 96));
 					g2d.setFont(headlineFont);
 					drawWrappedText(g2d, story.headline(), imgX, headlineY, textWidth, 46, 3);
 
-					// Render Summary
 					g2d.setColor(new Color(53, 75, 107));
 					g2d.setFont(summaryFont);
 					drawWrappedText(g2d, story.summary(), imgX, summaryY, textWidth, 42, 4);
 
-					// Render Meta Info (Source & Date)
 					g2d.setColor(new Color(75, 98, 123));
 					g2d.setFont(new Font("Arial", Font.BOLD, 20));
 					String srcLabel = sourceLabel(story.category()) != null ? sourceLabel(story.category()) : story.source();
@@ -238,7 +250,7 @@ public class PureJavaInfographicRenderer {
 			}
 
 			// 3. FOOTER
-			log.info("[InfographicRenderer] Drawing footer banner...");
+			log.debug("[InfographicRenderer] Drawing footer banner...");
 			g2d.setColor(new Color(234, 247, 253));
 			g2d.fillRoundRect(padding, y, contentWidth, 160, 28, 28);
 
@@ -257,7 +269,7 @@ public class PureJavaInfographicRenderer {
 			g2d.dispose();
 		}
 
-		log.info("[InfographicRenderer] Converting canvas buffer to PNG byte array...");
+		log.debug("[InfographicRenderer] Converting canvas buffer to PNG byte array...");
 		try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 			ImageIO.write(canvas, "png", baos);
 			return baos.toByteArray();
@@ -266,7 +278,7 @@ public class PureJavaInfographicRenderer {
 		}
 	}
 
-	private BufferedImage loadStoryImage(String imagePath) {
+	private BufferedImage loadAndSmoothScaleImage(String imagePath, int targetW, int targetH) {
 		if (imagePath == null || imagePath.isBlank()) return null;
 		try {
 			Path path = Path.of(imagePath);
@@ -274,14 +286,42 @@ public class PureJavaInfographicRenderer {
 				log.warn("[InfographicRenderer] Story image path is not a valid regular file: {}", imagePath);
 				return null;
 			}
-			return ImageIO.read(path.toFile());
+			BufferedImage original = ImageIO.read(path.toFile());
+			if (original == null) return null;
+
+			int origW = original.getWidth();
+			int origH = original.getHeight();
+			if (origW <= 0 || origH <= 0) return original;
+
+			// Smooth Bicubic Downscaling
+			double ratioW = (double) targetW / origW;
+			double ratioH = (double) targetH / origH;
+			double ratio = Math.max(ratioW, ratioH); // Ensure covers container fully for uniform crop
+
+			if (ratio >= 1.0) {
+				return original;
+			}
+
+			int scaledW = (int) (origW * ratio);
+			int scaledH = (int) (origH * ratio);
+
+			BufferedImage smoothed = new BufferedImage(scaledW, scaledH, BufferedImage.TYPE_INT_RGB);
+			Graphics2D g2d = smoothed.createGraphics();
+			g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+			g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+			g2d.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
+			
+			g2d.drawImage(original, 0, 0, scaledW, scaledH, null);
+			g2d.dispose();
+			original.flush();
+			return smoothed;
 		} catch (Exception e) {
-			log.warn("[InfographicRenderer] Failed to load story image from path '{}': {}", imagePath, e.getMessage());
+			log.warn("[InfographicRenderer] Failed to load/smooth-scale story image from path '{}': {}", imagePath, e.getMessage());
 			return null;
 		}
 	}
 
-	private void drawImageProportionally(Graphics2D g2d, BufferedImage img, int x, int y, int targetW, int targetH) {
+	private void drawImageCover(Graphics2D g2d, BufferedImage img, int x, int y, int targetW, int targetH) {
 		int imgW = img.getWidth();
 		int imgH = img.getHeight();
 		if (imgW <= 0 || imgH <= 0) {
@@ -294,11 +334,13 @@ public class PureJavaInfographicRenderer {
 
 		int drawW, drawH, drawX, drawY;
 		if (imgRatio > targetRatio) {
+			// Image is wider -> fill height, center-crop width horizontally
 			drawH = targetH;
-			drawW = (int) (imgRatio * targetH);
+			drawW = (int) (targetH * imgRatio);
 			drawX = x - (drawW - targetW) / 2;
 			drawY = y;
 		} else {
+			// Image is taller -> fill width, center-crop height vertically
 			drawW = targetW;
 			drawH = (int) (targetW / imgRatio);
 			drawX = x;
