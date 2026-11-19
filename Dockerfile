@@ -7,7 +7,7 @@ WORKDIR /app
 COPY target/*.jar cc-backend-ai.jar
 
 # Optimized Java heap for a 512 MB RAM Koyeb instance
-ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx300m"
+#ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx300m"
 
 # Application port (updated to match EXPOSE 2990 or your target port)
 EXPOSE 2990

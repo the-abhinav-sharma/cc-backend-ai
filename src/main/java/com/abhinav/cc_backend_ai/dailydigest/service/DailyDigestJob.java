@@ -7,7 +7,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -42,32 +44,48 @@ public class DailyDigestJob {
 		try {
 			tempDirectory = Files.createTempDirectory("daily20-");
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.error("Failed to create temp directory: {}", e.getMessage(), e);
 		}
 		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy h.mma", Locale.ENGLISH);
 		String digestDate = ZonedDateTime.now(ZoneId.of(timezone)).format(formatter);
-		log.info("=================Daily digest " + digestDate + " started==================");
+		log.info("=================Daily digest {} started==================", digestDate);
 		try {
 			var date = LocalDate.now(ZoneId.of(timezone))
 					.format(DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH));
 			var digest = selection.createDigest(rss.fetch(), date, tempDirectory);
 
-			byte[] png = renderer.render(digest, digestDate);
-			byte[] optimizedPng = pngOptimizationService.optimize(png, 0.70f);
+			List<byte[]> rawChunks = renderer.renderChunks(digest, digestDate);
+			List<byte[]> optimizedChunks = new ArrayList<>(rawChunks.size());
 
-			log.info("PNG size: {} MB -> {} MB", String.format("%.2f", png.length / (1024.0 * 1024.0)),
-					String.format("%.2f", optimizedPng.length / (1024.0 * 1024.0)));
+			long rawTotalBytes = 0;
+			long optTotalBytes = 0;
 
-			email.send(digestDate, optimizedPng);
+			for (int i = 0; i < rawChunks.size(); i++) {
+				byte[] rawChunk = rawChunks.get(i);
+				byte[] optChunk = pngOptimizationService.optimize(rawChunk, 0.70f);
+				optimizedChunks.add(optChunk);
 
-			// email.send(digest, renderer.render(digest, imageBytes));
-			log.info("Daily digest sent: " + digestDate);
+				rawTotalBytes += rawChunk.length;
+				optTotalBytes += optChunk.length;
+
+				log.info("Chunk {} PNG size: {} MB -> {} MB",
+						i,
+						String.format("%.2f", rawChunk.length / (1024.0 * 1024.0)),
+						String.format("%.2f", optChunk.length / (1024.0 * 1024.0)));
+			}
+
+			log.info("Total PNG size across {} chunks: {} MB -> {} MB",
+					optimizedChunks.size(),
+					String.format("%.2f", rawTotalBytes / (1024.0 * 1024.0)),
+					String.format("%.2f", optTotalBytes / (1024.0 * 1024.0)));
+
+			email.send(digestDate, optimizedChunks);
+			log.info("Daily digest sent: {}", digestDate);
 		} catch (Exception e) {
-			log.error("Digest failed; not sent: " + e.getMessage());
-			e.printStackTrace();
+			log.error("Digest failed; not sent: {}", e.getMessage(), e);
 		} finally {
 			deleteDirectory(tempDirectory);
-			log.info("=================Daily digest " + digestDate + " complete==================");
+			log.info("=================Daily digest {} complete==================", digestDate);
 		}
 	}
 
@@ -81,11 +99,11 @@ public class DailyDigestJob {
 				try {
 					Files.deleteIfExists(path);
 				} catch (IOException ex) {
-					log.error("Failed to delete temporary file: " + path + " - " + ex.getMessage());
+					log.error("Failed to delete temporary file: {} - {}", path, ex.getMessage());
 				}
 			});
 		} catch (IOException ex) {
-			log.error("Failed to clean temporary directory: " + directory + " - " + ex.getMessage());
+			log.error("Failed to clean temporary directory: {} - {}", directory, ex.getMessage());
 		}
 	}
 }

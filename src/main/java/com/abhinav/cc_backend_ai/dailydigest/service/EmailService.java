@@ -1,5 +1,7 @@
 package com.abhinav.cc_backend_ai.dailydigest.service;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -22,16 +24,32 @@ public class EmailService {
 		this.mail = mail;
 	}
 
-	public void send(String digestDate, byte[] png) throws Exception {
+	public void send(String digestDate, List<byte[]> infographicChunks) throws Exception {
 		log.info("Mail started");
 
-		if (png == null || png.length == 0) {
-			throw new IllegalArgumentException("Generated PNG image is empty.");
+		if (infographicChunks == null || infographicChunks.isEmpty()) {
+			throw new IllegalArgumentException("Generated PNG infographic chunks are empty.");
 		}
 
-		// Log generated image size
-		log.info("Infographic size: {} bytes ({} KB, {} MB)", String.format("%,d", png.length),
-				String.format("%.2f", png.length / 1024.0), String.format("%.2f", png.length / (1024.0 * 1024.0)));
+		long totalBytes = 0;
+		for (int i = 0; i < infographicChunks.size(); i++) {
+			byte[] chunk = infographicChunks.get(i);
+			if (chunk == null || chunk.length == 0) {
+				throw new IllegalArgumentException("Infographic chunk at index " + i + " is empty.");
+			}
+			totalBytes += chunk.length;
+			log.info("Chunk {} size: {} bytes ({} KB, {} MB)",
+					i,
+					String.format("%,d", chunk.length),
+					String.format("%.2f", chunk.length / 1024.0),
+					String.format("%.2f", chunk.length / (1024.0 * 1024.0)));
+		}
+
+		log.info("Total infographic size across {} chunks: {} bytes ({} KB, {} MB)",
+				infographicChunks.size(),
+				String.format("%,d", totalBytes),
+				String.format("%.2f", totalBytes / 1024.0),
+				String.format("%.2f", totalBytes / (1024.0 * 1024.0)));
 
 		MimeMessage m = mail.createMimeMessage();
 		MimeMessageHelper h = new MimeMessageHelper(m, true, "UTF-8");
@@ -40,16 +58,38 @@ public class EmailService {
 		h.setBcc(recipients);
 		h.setSubject("[The Daily 20] : " + digestDate);
 
+		StringBuilder rowsHtml = new StringBuilder();
+		for (int i = 0; i < infographicChunks.size(); i++) {
+			String cid = "chunk" + i;
+			String tdPadding = (i == 0)
+					? "padding: 10px 10px 0 10px;"
+					: (i == infographicChunks.size() - 1)
+							? "padding: 0 10px 10px 10px;"
+							: "padding: 0 10px 0 10px;";
+
+			rowsHtml.append("<tr>")
+					.append("<td style=\"").append(tdPadding).append(" text-align: center; font-size: 0; line-height: 0; mso-line-height-rule: exactly;\">")
+					.append("<a href=\"javascript:void(0);\" style=\"display: block; margin: 0; padding: 0; text-decoration: none; cursor: default;\">")
+					.append("<img src=\"cid:").append(cid).append("\" ")
+					.append("style=\"display: block; width: 100%; max-width: 660px; height: auto; max-height: none; border: 0; outline: none; text-decoration: none; margin: 0; padding: 0;\" ")
+					.append("alt=\"The Daily 20 - Part ").append(i + 1).append("\">")
+					.append("</a>")
+					.append("</td>")
+					.append("</tr>");
+		}
+
 		String body = "<div style=\"background-color: #f4f4f4; padding: 20px 0; text-align: center;\">"
 				+ "<table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin: 0 auto; max-width: 680px; width: 100%; background-color: #ffffff;\">"
-				+ "<tr>" + "<td style=\"padding: 10px; text-align: center;\">"
-				+ "<a href=\"javascript:void(0);\" style=\"display: block; text-decoration: none; cursor: default;\">"
-				+ "<img src='cid:daily5' style='display: block; width: 100%; max-width: 680px; height: auto; max-height: none; border: 0; outline: none; text-decoration: none;' alt='The Daily 20'>"
-				+ "</a>" + "</td>" + "</tr>" + "</table>" + "</div>";
+				+ rowsHtml
+				+ "</table>"
+				+ "</div>";
 
 		h.setText(body, true);
 
-		h.addInline("daily5", new ByteArrayResource(png), "image/png");
+		for (int i = 0; i < infographicChunks.size(); i++) {
+			String cid = "chunk" + i;
+			h.addInline(cid, new ByteArrayResource(infographicChunks.get(i)), "image/jpeg");
+		}
 
 		log.info("Before sending mail");
 
@@ -60,5 +100,4 @@ public class EmailService {
 		log.info("Mail sent");
 		log.info("mail.send() duration: " + elapsedMs + " ms");
 	}
-
 }
