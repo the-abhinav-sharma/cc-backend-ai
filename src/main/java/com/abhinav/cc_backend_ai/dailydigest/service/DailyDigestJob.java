@@ -54,31 +54,28 @@ public class DailyDigestJob {
 					.format(DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH));
 			var digest = selection.createDigest(rss.fetch(), date, tempDirectory);
 
-			List<byte[]> rawChunks = renderer.renderChunks(digest, digestDate);
-			List<byte[]> optimizedChunks = new ArrayList<>(rawChunks.size());
+			List<byte[]> optimizedChunks = new ArrayList<>(4);
+			final long[] rawTotalBytes = { 0L };
+			final long[] optTotalBytes = { 0L };
 
-			long rawTotalBytes = 0;
-			long optTotalBytes = 0;
-
-			for (int i = 0; i < rawChunks.size(); i++) {
-				byte[] rawChunk = rawChunks.get(i);
+			renderer.renderChunksStream(digest, digestDate, (idx, category, rawChunk) -> {
 				byte[] optChunk = pngOptimizationService.optimize(rawChunk, 0.70f);
 				optimizedChunks.add(optChunk);
 
-				rawTotalBytes += rawChunk.length;
-				optTotalBytes += optChunk.length;
+				rawTotalBytes[0] += rawChunk.length;
+				optTotalBytes[0] += optChunk.length;
 
-				log.info("Chunk {} PNG size: {} MB -> {} MB",
-						i,
+				log.info("Chunk {} ({}) PNG size: {} MB -> {} MB",
+						idx,
+						category,
 						String.format("%.2f", rawChunk.length / (1024.0 * 1024.0)),
 						String.format("%.2f", optChunk.length / (1024.0 * 1024.0)));
-			}
-			rawChunks.clear();
+			});
 
 			log.info("Total PNG size across {} chunks: {} MB -> {} MB",
 					optimizedChunks.size(),
-					String.format("%.2f", rawTotalBytes / (1024.0 * 1024.0)),
-					String.format("%.2f", optTotalBytes / (1024.0 * 1024.0)));
+					String.format("%.2f", rawTotalBytes[0] / (1024.0 * 1024.0)),
+					String.format("%.2f", optTotalBytes[0] / (1024.0 * 1024.0)));
 
 			email.send(digestDate, optimizedChunks);
 			log.info("Daily digest sent: {}", digestDate);

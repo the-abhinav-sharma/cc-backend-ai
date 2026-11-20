@@ -6,6 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -34,7 +37,93 @@ public class PureJavaInfographicRenderer {
 	private static final int IMAGE_TO_HEADLINE_GAP = 45;
 	private static final int CARD_SPACING = 28;
 
+	// Subsample images above ~2.5M pixels during decode; only skip extreme >16M pixel images
+	private static final long SUBSAMPLE_PIXEL_THRESHOLD = 2_500_000L;
+	private static final long MAX_SAFE_PIXELS = 16_000_000L;
+	private static final long MAX_FALLBACK_FILE_BYTES = 5L * 1024 * 1024;
+
 	private final ReentrantLock renderLock = new ReentrantLock();
+
+	@FunctionalInterface
+	public interface ChunkConsumer {
+		void accept(int index, String category, byte[] pngBytes) throws Exception;
+	}
+
+	/**
+	 * Streams one PNG byte[] per active category chunk to a consumer so each chunk
+	 * can be optimized to JPEG and released before the next chunk canvas is allocated.
+	 */
+	public void renderChunksStream(NewsDigest digest, String digestDate, ChunkConsumer consumer) throws Exception {
+		log.info("[InfographicRenderer] Streaming chunked render requested for date: {}", digestDate);
+		if (!renderLock.tryLock()) {
+			log.warn("[InfographicRenderer] Render conflict: Another infographic thread is already active.");
+			throw new IllegalStateException("Another infographic render is already running");
+		}
+		long startTime = System.currentTimeMillis();
+		try {
+			Map<String, List<NewsStory>> grouped = groupStoriesByCategory(digest);
+			var entries = new ArrayList<>(grouped.entrySet());
+			if (entries.isEmpty()) {
+				return;
+			}
+
+			Font headlineFont = new Font("Arial", Font.BOLD, 36);
+			Font summaryFont = new Font("Arial", Font.PLAIN, 32);
+			int storyNumber = 0;
+
+			for (int idx = 0; idx < entries.size(); idx++) {
+				boolean isFirst = (idx == 0);
+				boolean isLast = (idx == entries.size() - 1);
+				String category = entries.get(idx).getKey();
+				List<NewsStory> stories = entries.get(idx).getValue();
+
+				int chunkHeight = calculateChunkHeight(stories, headlineFont, summaryFont, isFirst, isLast);
+				log.info("[InfographicRenderer] Chunk '{}' dimensions: Width = {}, Height = {}px (first={}, last={})",
+						category, CANVAS_WIDTH, chunkHeight, isFirst, isLast);
+
+				BufferedImage chunkCanvas = new BufferedImage(CANVAS_WIDTH, chunkHeight, BufferedImage.TYPE_INT_RGB);
+				Graphics2D g2d = chunkCanvas.createGraphics();
+				try {
+					configureQualityHints(g2d);
+					g2d.setColor(new Color(237, 242, 248));
+					g2d.fillRect(0, 0, CANVAS_WIDTH, chunkHeight);
+
+					int y = isFirst ? PADDING : 0;
+					if (isFirst) {
+						drawHeaderBanner(g2d, digestDate, y);
+						y += 300;
+					}
+
+					storyNumber = drawCategorySection(g2d, category, stories, storyNumber, headlineFont, summaryFont, y);
+					y = getSectionEndY(stories, headlineFont, summaryFont, y);
+
+					if (isLast) {
+						drawFooterBanner(g2d, y + 12);
+					}
+				} finally {
+					g2d.dispose();
+				}
+
+				byte[] pngBytes;
+				try {
+					pngBytes = encodePng(chunkCanvas, 4 * 1024 * 1024);
+				} finally {
+					chunkCanvas.flush();
+				}
+
+				consumer.accept(idx, category, pngBytes);
+			}
+
+			log.info("[InfographicRenderer] Streaming chunked render completed in {} ms",
+					(System.currentTimeMillis() - startTime));
+		} catch (Exception e) {
+			log.error("[InfographicRenderer] Streaming chunked render failed after {} ms: {}",
+					(System.currentTimeMillis() - startTime), e.getMessage(), e);
+			throw e;
+		} finally {
+			renderLock.unlock();
+		}
+	}
 
 	/**
 	 * Renders the digest as one PNG byte[] per active category chunk to keep peak heap usage low.
@@ -437,52 +526,103 @@ public class PureJavaInfographicRenderer {
 				log.warn("[InfographicRenderer] Story image path is not a valid regular file: {}", imagePath);
 				return null;
 			}
-			
-			long fileSize = Files.size(path);
-			if (fileSize > 4L * 1024 * 1024) { // Skip files > 4 MB to protect 512MB container memory
-				log.warn("[InfographicRenderer] Skipping oversized story image ({} bytes): {}", fileSize, imagePath);
-				return null;
+
+			BufferedImage original = decodeWithSubsampling(path);
+			if (original == null) {
+				long fileSize = Files.size(path);
+				if (fileSize <= MAX_FALLBACK_FILE_BYTES) {
+					original = ImageIO.read(path.toFile());
+				} else {
+					log.warn("[InfographicRenderer] Skipping oversized non-subsampled image ({} bytes): {}", fileSize, imagePath);
+					return null;
+				}
 			}
-			
-			BufferedImage original = ImageIO.read(path.toFile());
 			if (original == null) return null;
-			
-			int origW = original.getWidth();
-			int origH = original.getHeight();
-			if (origW <= 0 || origH <= 0) {
+
+			try {
+				int origW = original.getWidth();
+				int origH = original.getHeight();
+				if (origW <= 0 || origH <= 0) {
+					return null;
+				}
+
+				double ratioW = (double) targetW / origW;
+				double ratioH = (double) targetH / origH;
+				double ratio = Math.max(ratioW, ratioH);
+
+				if (ratio >= 1.0) {
+					BufferedImage copy = new BufferedImage(origW, origH, BufferedImage.TYPE_INT_RGB);
+					Graphics2D copyG2d = copy.createGraphics();
+					try {
+						copyG2d.setColor(Color.WHITE);
+						copyG2d.fillRect(0, 0, origW, origH);
+						copyG2d.drawImage(original, 0, 0, null);
+					} finally {
+						copyG2d.dispose();
+					}
+					return copy;
+				}
+
+				int scaledW = Math.max(1, (int) Math.round(origW * ratio));
+				int scaledH = Math.max(1, (int) Math.round(origH * ratio));
+
+				BufferedImage smoothed = new BufferedImage(scaledW, scaledH, BufferedImage.TYPE_INT_RGB);
+				Graphics2D g2d = smoothed.createGraphics();
+				try {
+					g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+					g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+					g2d.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
+					g2d.drawImage(original, 0, 0, scaledW, scaledH, null);
+				} finally {
+					g2d.dispose();
+				}
+				return smoothed;
+			} finally {
 				original.flush();
-				return null;
 			}
-			if ((long) origW * origH > 4_000_000L) { // e.g., > ~4 megapixels (like 2500x1600)
-				log.warn("[InfographicRenderer] Skipping high-resolution story image ({}x{}): {}", origW, origH, imagePath);
-				original.flush();
-				return null;
-			}
-
-			double ratioW = (double) targetW / origW;
-			double ratioH = (double) targetH / origH;
-			double ratio = Math.max(ratioW, ratioH);
-
-			if (ratio >= 1.0) {
-				return original;
-			}
-
-			int scaledW = (int) (origW * ratio);
-			int scaledH = (int) (origH * ratio);
-
-			BufferedImage smoothed = new BufferedImage(scaledW, scaledH, BufferedImage.TYPE_INT_RGB);
-			Graphics2D g2d = smoothed.createGraphics();
-			g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-			g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-			g2d.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
-
-			g2d.drawImage(original, 0, 0, scaledW, scaledH, null);
-			g2d.dispose();
-			original.flush();
-			return smoothed;
 		} catch (Exception e) {
 			log.warn("[InfographicRenderer] Failed to load/smooth-scale story image from path '{}': {}", imagePath, e.getMessage());
 			return null;
+		}
+	}
+
+	private BufferedImage decodeWithSubsampling(Path path) throws IOException {
+		try (ImageInputStream iis = ImageIO.createImageInputStream(path.toFile())) {
+			if (iis == null) {
+				return null;
+			}
+			Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+			if (!readers.hasNext()) {
+				return null;
+			}
+			ImageReader reader = readers.next();
+			try {
+				reader.setInput(iis, true, true);
+				int w = reader.getWidth(0);
+				int h = reader.getHeight(0);
+				long totalPixels = (long) w * h;
+
+				if (totalPixels > MAX_SAFE_PIXELS) {
+					log.warn("[InfographicRenderer] Skipping extreme resolution image ({}x{}): {}", w, h, path);
+					return null;
+				}
+
+				int step = 1;
+				if (totalPixels > SUBSAMPLE_PIXEL_THRESHOLD) {
+					double ratio = Math.sqrt((double) totalPixels / SUBSAMPLE_PIXEL_THRESHOLD);
+					step = Math.max(2, (int) Math.ceil(ratio));
+					log.debug("[InfographicRenderer] Subsampling {}x{} by {}x for memory safety: {}",
+							w, h, step, path.getFileName());
+				}
+
+				ImageReadParam param = reader.getDefaultReadParam();
+				if (step > 1) {
+					param.setSourceSubsampling(step, step, 0, 0);
+				}
+				return reader.read(0, param);
+			} finally {
+				reader.dispose();
+			}
 		}
 	}
 
