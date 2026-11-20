@@ -437,12 +437,27 @@ public class PureJavaInfographicRenderer {
 				log.warn("[InfographicRenderer] Story image path is not a valid regular file: {}", imagePath);
 				return null;
 			}
+			
+			long fileSize = Files.size(path);
+			if (fileSize > 4L * 1024 * 1024) { // Skip files > 4 MB to protect 512MB container memory
+				log.warn("[InfographicRenderer] Skipping oversized story image ({} bytes): {}", fileSize, imagePath);
+				return null;
+			}
+			
 			BufferedImage original = ImageIO.read(path.toFile());
 			if (original == null) return null;
-
+			
 			int origW = original.getWidth();
 			int origH = original.getHeight();
-			if (origW <= 0 || origH <= 0) return original;
+			if (origW <= 0 || origH <= 0) {
+				original.flush();
+				return null;
+			}
+			if ((long) origW * origH > 4_000_000L) { // e.g., > ~4 megapixels (like 2500x1600)
+				log.warn("[InfographicRenderer] Skipping high-resolution story image ({}x{}): {}", origW, origH, imagePath);
+				original.flush();
+				return null;
+			}
 
 			double ratioW = (double) targetW / origW;
 			double ratioH = (double) targetH / origH;

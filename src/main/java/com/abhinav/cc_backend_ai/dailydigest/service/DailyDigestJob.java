@@ -73,6 +73,7 @@ public class DailyDigestJob {
 						String.format("%.2f", rawChunk.length / (1024.0 * 1024.0)),
 						String.format("%.2f", optChunk.length / (1024.0 * 1024.0)));
 			}
+			rawChunks.clear();
 
 			log.info("Total PNG size across {} chunks: {} MB -> {} MB",
 					optimizedChunks.size(),
