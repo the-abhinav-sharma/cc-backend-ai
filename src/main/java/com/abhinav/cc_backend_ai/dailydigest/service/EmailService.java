@@ -3,6 +3,7 @@ package com.abhinav.cc_backend_ai.dailydigest.service;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -18,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Slf4j
 public class EmailService {
+	private static final DateTimeFormatter DATE_FORMATTER =
+			DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+
 	private final JavaMailSender mail;
 	@Value("${digest.recipient}")
 	private String[] recipients;
@@ -33,17 +37,22 @@ public class EmailService {
 	public void send(String digestDate, List<byte[]> infographicChunks) throws Exception {
 		log.info("Mail started");
 
+		if (recipients == null || recipients.length == 0) {
+			throw new IllegalArgumentException("No digest recipients configured.");
+		}
 		if (infographicChunks == null || infographicChunks.isEmpty()) {
 			throw new IllegalArgumentException("Generated PNG infographic chunks are empty.");
 		}
 
 		long totalBytes = 0;
+		List<ByteArrayResource> chunkResources = new ArrayList<>(infographicChunks.size());
 		for (int i = 0; i < infographicChunks.size(); i++) {
 			byte[] chunk = infographicChunks.get(i);
 			if (chunk == null || chunk.length == 0) {
 				throw new IllegalArgumentException("Infographic chunk at index " + i + " is empty.");
 			}
 			totalBytes += chunk.length;
+			chunkResources.add(new ByteArrayResource(chunk));
 			log.info("Chunk {} size: {} bytes ({} KB, {} MB)",
 					i,
 					String.format("%,d", chunk.length),
@@ -57,19 +66,50 @@ public class EmailService {
 				String.format("%.2f", totalBytes / 1024.0),
 				String.format("%.2f", totalBytes / (1024.0 * 1024.0)));
 
-		MimeMessage m = mail.createMimeMessage();
-		MimeMessageHelper h = new MimeMessageHelper(m, true, "UTF-8");
+		String subject = getDigestSubject();
+		String body = buildHtmlBody(infographicChunks.size());
+		List<MimeMessage> messages = new ArrayList<>(recipients.length);
 
-		h.setFrom(from,"THE DAILY 20");
-		h.setBcc(recipients);
-		h.setSubject(getDigestSubject());
+		for (String recipient : recipients) {
+			if (recipient == null || recipient.isBlank()) {
+				continue;
+			}
+			MimeMessage m = mail.createMimeMessage();
+			MimeMessageHelper h = new MimeMessageHelper(m, true, "UTF-8");
 
+			h.setFrom(from, "THE DAILY 20");
+			h.setTo(recipient.trim());
+			h.setSubject(subject);
+			h.setText(body, true);
+
+			for (int i = 0; i < chunkResources.size(); i++) {
+				h.addInline("chunk" + i, chunkResources.get(i), "image/jpeg");
+			}
+
+			messages.add(m);
+		}
+
+		if (messages.isEmpty()) {
+			throw new IllegalArgumentException("All configured digest recipients are blank.");
+		}
+
+		log.info("Before sending mail to {} recipients", messages.size());
+
+		long start = System.nanoTime();
+		mail.send(messages.toArray(new MimeMessage[0]));
+		long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+		log.info("Mail sent to {} recipients", messages.size());
+		log.info("mail.send() duration: " + elapsedMs + " ms");
+	}
+
+	private String buildHtmlBody(int chunkCount) {
 		StringBuilder rowsHtml = new StringBuilder();
-		for (int i = 0; i < infographicChunks.size(); i++) {
+		for (int i = 0; i < chunkCount; i++) {
 			String cid = "chunk" + i;
 			String tdPadding = (i == 0)
 					? "padding: 10px 10px 0 10px;"
-					: (i == infographicChunks.size() - 1)
+					: (i == chunkCount - 1)
 							? "padding: 0 10px 10px 10px;"
 							: "padding: 0 10px 0 10px;";
 
@@ -84,38 +124,22 @@ public class EmailService {
 					.append("</tr>");
 		}
 
-		String body = "<div style=\"background-color: #f4f4f4; padding: 20px 0; text-align: center;\">"
+		return "<div style=\"background-color: #f4f4f4; padding: 20px 0; text-align: center;\">"
 				+ "<table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin: 0 auto; max-width: 680px; width: 100%; background-color: #ffffff;\">"
 				+ rowsHtml
 				+ "</table>"
 				+ "</div>";
-
-		h.setText(body, true);
-
-		for (int i = 0; i < infographicChunks.size(); i++) {
-			String cid = "chunk" + i;
-			h.addInline(cid, new ByteArrayResource(infographicChunks.get(i)), "image/jpeg");
-		}
-
-		log.info("Before sending mail");
-
-		long start = System.nanoTime();
-		mail.send(m);
-		long elapsedMs = (System.nanoTime() - start) / 1_000_000;
-
-		log.info("Mail sent");
-		log.info("mail.send() duration: " + elapsedMs + " ms");
 	}
-	
+
 	private String getDigestSubject() {
-	    ZonedDateTime now = ZonedDateTime.now(ZoneId.of(timezone));
-	    String formattedDate = now.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH));
+		ZonedDateTime now = ZonedDateTime.now(ZoneId.of(timezone));
+		String formattedDate = now.format(DATE_FORMATTER);
 
-	    int hour = now.getHour();
-	    String slotLabel = hour < 11 ? "8 AM Edition"
-	                     : hour < 17 ? "2 PM Edition"
-	                     : "8 PM Edition";
+		int hour = now.getHour();
+		String slotLabel = hour < 11 ? "8 AM Edition"
+				: hour < 17 ? "2 PM Edition"
+				: "8 PM Edition";
 
-	    return slotLabel + " • " + formattedDate;
+		return slotLabel + " • " + formattedDate;
 	}
 }
