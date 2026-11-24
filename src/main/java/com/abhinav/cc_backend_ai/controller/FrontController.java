@@ -121,8 +121,8 @@ public class FrontController {
 	
 	@GetMapping(path = "/health")
 	public String health() throws IOException {
-		log.info("Inside health - " + new Date());
-		return "CC Backend AI is up and running - 0120!";
+		log.info("Inside health - v0120 - " + new Date());
+		return "CC Backend AI is up and running!";
 	}
 	
 	@GetMapping(path = "/news")
