@@ -1,6 +1,10 @@
 package com.abhinav.cc_backend_ai.dailydigest.service;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
@@ -19,6 +23,8 @@ public class EmailService {
 	private String[] recipients;
 	@Value("${digest.sender}")
 	private String from;
+	@Value("${digest.timezone}")
+	private String timezone;
 
 	public EmailService(JavaMailSender mail) {
 		this.mail = mail;
@@ -54,9 +60,9 @@ public class EmailService {
 		MimeMessage m = mail.createMimeMessage();
 		MimeMessageHelper h = new MimeMessageHelper(m, true, "UTF-8");
 
-		h.setFrom(from);
+		h.setFrom(from,"THE DAILY 20");
 		h.setBcc(recipients);
-		h.setSubject("[The Daily 20] : " + digestDate);
+		h.setSubject(getDigestSubject());
 
 		StringBuilder rowsHtml = new StringBuilder();
 		for (int i = 0; i < infographicChunks.size(); i++) {
@@ -99,5 +105,17 @@ public class EmailService {
 
 		log.info("Mail sent");
 		log.info("mail.send() duration: " + elapsedMs + " ms");
+	}
+	
+	private String getDigestSubject() {
+	    ZonedDateTime now = ZonedDateTime.now(ZoneId.of(timezone));
+	    String formattedDate = now.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH));
+
+	    int hour = now.getHour();
+	    String slotLabel = hour < 11 ? "8 AM Edition"
+	                     : hour < 17 ? "2 PM Edition"
+	                     : "8 PM Edition";
+
+	    return slotLabel + " • " + formattedDate;
 	}
 }
